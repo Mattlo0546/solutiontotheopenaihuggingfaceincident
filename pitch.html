@@ -10,10 +10,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&display=swap">
 <style>
   :root{
-    --ground:#05080d; --surface:#0a121a; --raise:#0e1925;
-    --line:#1a2836; --line2:#24384a;
-    --ink:#dce8f2; --dim:#6c88a3; --dimmer:#41576e;
-    --real:#00ffa3; --proj:#6ea8ff; --warn:#ffb020; --crit:#ff3b6b;
+    --ground:#ffffff; --surface:#f7f9fb; --raise:#eef3f7;
+    --line:#dfe7ee; --line2:#c2cfdb;
+    --ink:#0b1319; --dim:#4d6274; --dimmer:#8397a8;
+    --real:#00734d; --proj:#1f5fc4; --warn:#9a5b00; --crit:#c11d43;
     --disp:"IBM Plex Sans Condensed",-apple-system,"Segoe UI",sans-serif;
     --body:"IBM Plex Sans",-apple-system,"Segoe UI",sans-serif;
     --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
@@ -48,7 +48,7 @@
   p{margin:0;max-width:66ch}
   .lede{font-size:clamp(17px,2vw,22px);line-height:1.5;color:var(--ink);max-width:60ch}
   .muted{color:var(--dim)}
-  .kicker{font-family:var(--mono);font-size:12.5px;letter-spacing:.1em;color:var(--real)}
+  .kicker{font-family:var(--mono);font-size:12.5px;letter-spacing:.1em;color:var(--real);font-weight:500}
   strong{font-weight:600;color:var(--ink)}
   .num{position:absolute;top:26px;right:max(28px,5vw);font-family:var(--mono);
     font-size:11px;letter-spacing:.18em;color:var(--dimmer)}
@@ -58,7 +58,7 @@
   .nest{position:relative;padding:40px;border:1px solid var(--line2)}
   .nest::before,.nest::after{content:"";position:absolute;border:1px solid var(--line);pointer-events:none}
   .nest::before{inset:11px}
-  .nest::after{inset:23px;border-color:#12202d}
+  .nest::after{inset:23px;border-color:#eaeff4}
 
   .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px}
   .card{background:var(--surface);border:1px solid var(--line);padding:20px 22px;
@@ -66,7 +66,7 @@
   .card .tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;
     text-transform:uppercase;color:var(--dim)}
   .card p{font-size:14.5px;color:var(--dim);line-height:1.55}
-  .card.on{border-color:#12503c}
+  .card.on{border-color:#b3d8c8}
   .card.on .tag{color:var(--real)}
 
   table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:14px;
@@ -81,7 +81,7 @@
 
   .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-family:var(--mono);font-size:12.5px}
   .box{border:1px solid var(--line2);padding:7px 12px;color:var(--dim);background:var(--surface)}
-  .box.b{border-color:#3a2230;color:var(--crit)}
+  .box.b{border-color:#eccdd6;color:var(--crit);background:#fdf5f7}
   .arw{color:var(--dimmer)}
 
   .big{font-family:var(--disp);font-weight:700;font-size:clamp(40px,7vw,86px);
@@ -99,7 +99,7 @@
   .step p{font-size:14.5px;color:var(--dim);margin-top:5px}
 
   code{font-family:var(--mono);font-size:.92em;color:var(--proj);
-    background:#0d1a26;padding:1.5px 6px;border:1px solid var(--line)}
+    background:#eef3f8;padding:1.5px 6px;border:1px solid var(--line)}
   .quote{border-left:2px solid var(--real);padding:4px 0 4px 22px;
     font-size:clamp(17px,2.1vw,21px);line-height:1.45;max-width:62ch}
   .cite{font-family:var(--mono);font-size:11.5px;color:var(--dimmer);letter-spacing:.06em}
