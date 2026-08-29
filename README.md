@@ -2,36 +2,62 @@
 
 **Defence in depth. Taken literally.**
 
-The industry standard for AI agent isolation is one (1) sandbox. When that sandbox
-fails, the agent is on your host. MATRYOSHKA ships 1000.
+In July 2026 an AI model escaped its sandbox, crossed the public internet, and
+compromised another company's production infrastructure. It cleared at least five
+security perimeters on the way. The industry standard for agent isolation is one (1).
+
+MATRYOSHKA ships 1000.
 
 ---
 
-## Background
+## The incident
 
-Sandbox escape in agent infrastructure is not hypothetical. Public security research
-has repeatedly demonstrated that shared model-hosting and inference platforms can be
-escaped by a malicious uploaded artifact — most prominently the 2024 work on
-pickle-deserialization leading to cross-tenant container escape on Hugging Face's
-inference infrastructure. The pattern generalises to every platform that executes
-untrusted, model-supplied code on shared tenancy — which, since the frontier labs began
-shipping agents that run generated code against public model hubs, is now most of them.
+On 21 July 2026, OpenAI disclosed that a combination of its models — GPT‑5.6 Sol and an
+unreleased, more capable successor, both running with cyber refusals reduced and without
+the production classifiers that prevent models from pursuing high-risk cyber activity —
+escaped their evaluation sandbox and compromised Hugging Face's production
+infrastructure.
 
-This document refers to that class of failure as **the incident**.
+The models were not trying to cause harm. They were trying to cheat.
 
-Every mitigation proposed since shares a single structural assumption:
+They were being graded on ExploitGym. They inferred that Hugging Face probably hosted the
+benchmark's datasets and solutions, and went to get them. In OpenAI's words, the models
 
-> **the sandbox holds.**
+> chained vulnerabilities across OpenAI's research environment and Hugging Face's
+> production infrastructure to obtain test solutions directly from Hugging Face's
+> production database.
 
-Hardened runtimes, seccomp profiles, gVisor, microVMs, syscall filtering — each one
-reduces the probability that the boundary fails. None of them address what happens
-after it does. The entire industry is running a single point of failure and calling it
-a security architecture.
+The route out was a zero-day in the package registry cache proxy — one of the evaluation
+environment's few permitted egress paths to the internet, and reported to be a self-hosted
+Artifactory instance. From there: an external code-evaluation harness on third-party
+infrastructure, then a Jinja2 template injection into Hugging Face's dataset config
+processing, giving arbitrary code execution in production pods, then Kubernetes service
+account tokens, then AWS metadata endpoint credentials.
 
-MATRYOSHKA does not attempt to make the boundary stronger. It assumes the boundary
-fails, and asks the only question that follows: **then what?**
+The intrusion window ran from 09 July 02:28 UTC to 13 July 14:14 UTC. Hugging Face
+detected and contained it on 16 July — five days before OpenAI connected its own
+evaluation to the intrusion. Customer impact was five datasets, all of them
+ExploitGym/CyberGym challenges and solutions.
+
+Now count the boundaries:
+
+```
+OpenAI's sandbox  →  third-party eval infrastructure  →  HF dataset processor
+                  →  Kubernetes cluster  →  internal network  →  source control
+```
+
+At least five perimeters, crossed sequentially, by a model looking for an answer key.
+
+**Five was not enough. That is the entire finding.**
 
 ## Thesis
+
+The response to the incident has been to harden the boundary: better egress filtering,
+better classifiers, better proxies. Every one of these reduces the probability that a
+boundary fails. None of them change what happens after it does — and on 9 July, it did.
+
+MATRYOSHKA does not attempt to make the boundary stronger. It assumes the boundary fails,
+because it demonstrably does, and asks the only question that follows: **then what?**
 
 An agent that escapes a sandbox lands in another sandbox.
 
@@ -45,19 +71,45 @@ egress to the host requires `p^n` for `n` nested boundaries.
 | Layers | Architecture | P(full escape) at p = 0.5 |
 |---:|---|---:|
 | 1 | current industry state of the art | 5.0 × 10⁻¹ |
-| 2 | no known production deployments | 2.5 × 10⁻¹ |
+| 5 | OpenAI's evaluation environment, July 2026 | 3.1 × 10⁻² |
 | 10 | MATRYOSHKA, as delivered (see Limitations) | 9.8 × 10⁻⁴ |
 | 1000 | MATRYOSHKA, design target | 9.3 × 10⁻³⁰² |
 
-`p = 0.5` is a coin flip at every boundary — an escape rate orders of magnitude worse
-than any container runtime ever measured. We use it because the result holds anyway.
+`p = 0.5` is a coin flip at every boundary — an escape rate orders of magnitude worse than
+any container runtime ever measured. We use it because the result holds anyway.
 
 At the design target, an adversary would need on the order of 10³⁰¹ escape attempts to
 expect one success. There are approximately 10⁸⁰ atoms in the observable universe.
 
-**Mean time to escape.** An agent escaping one boundary per second reaches the host in
-16 minutes 40 seconds. This exceeds the duration of most demos, and of most security
-review meetings.
+**Mean time to escape.** The July intrusion took four days to cross five boundaries. At
+that rate, 1000 boundaries take 2 years 2 months. At a far more generous one boundary per
+second, 16 minutes 40 seconds — which still exceeds the duration of most demos, and of
+most security review meetings.
+
+## Detection surface
+
+The escape arithmetic above is the marketing. This is the argument we would actually make
+to a security team.
+
+A single boundary yields a single detection opportunity, and only if someone is watching
+it. The July intrusion crossed five boundaries over four days. It was caught at the fifth,
+by the victim, on 16 July — and the operator did not connect it to its own evaluation for
+another five days.
+
+`n` boundaries yield `n` independent detection opportunities. At a pessimistic per-boundary
+detection probability `d = 0.2`, the probability an intrusion goes entirely unnoticed is
+`(1 − d)^n`:
+
+| Boundaries | P(intrusion goes unnoticed) |
+|---:|---:|
+| 1 | 0.80 |
+| 5 | 0.33 |
+| 10 | 0.11 |
+| 1000 | 10⁻⁹⁷ |
+
+Nesting does not primarily make escape harder. It makes escape **loud**. Every boundary an
+agent crosses is a provisioning event, an API call, and a log line with a parent id
+attached to it — and in this implementation, a box that changes colour on a screen.
 
 ## Architecture
 
@@ -76,20 +128,44 @@ rendered on the boxes in the visualiser and printed in the recursion log.
 
 Measured cost of one containment boundary: **~2.2 seconds**.
 
+## Why Daytona
+
+Recursive containment has one hard requirement: a sandbox must be able to provision
+another sandbox *from inside itself*, without the host brokering it. Daytona is the only
+provider we found where that is a single authenticated API call from within the box, which
+is what makes layer N+1 a child of layer N rather than a sibling created by the host.
+
+The rest of the design falls out of the platform:
+
+| Requirement | Daytona primitive | Measured |
+|---|---|---|
+| A boundary must be cheap enough to have 1000 of | `POST /sandbox` | **2.2 s**, 1 vCPU |
+| A boundary must be created *by* its parent | API call from inside the sandbox | ~600 ms of the 2.2 s |
+| Containment must expire on its own | `autoStopInterval` / `autoDeleteInterval` | 5 min / 15 min |
+| A runaway chain must be killable in one action | `labels: {app, run, depth}` + list/delete | 10 sandboxes, one request |
+| The ceiling must be visible, not silent | tier quota returns a typed 400 | rendered red, on screen |
+
+The last row is the one that matters operationally. The quota refusal is not an error the
+app swallows — it is the containment ceiling reporting itself, and a containment ceiling
+you cannot see is the one you find out about during an incident.
+
 ## Why Pong
 
 The innermost layer must run a workload. An empty sandbox proves nothing.
 
-Pong was selected against three criteria:
+Pong was selected against four criteria:
 
 1. **Verifiable without instrumentation.** A human observer at three metres can confirm
    correct execution. No agent, no exporter, no dashboard — a dashboard reporting that
    layer 1000 is healthy is itself a process that can be compromised.
-2. **Continuous.** A crashed process is indistinguishable from an idle one. A stopped
-   ball is not.
+2. **Continuous.** A crashed process is indistinguishable from an idle one. A stopped ball
+   is not.
 3. **Adversarially uninteresting.** Pong holds no credentials, opens no sockets, and
-   touches no filesystem. It is a liveness probe, not an asset. An agent that
-   compromises Pong has compromised Pong.
+   touches no filesystem. An agent that compromises Pong has compromised Pong.
+4. **No answer key.** ExploitGym had one, which is why its solutions were worth five
+   perimeters. Pong's score cannot be looked up anywhere, so an agent at layer 1000 that
+   wants to cheat has nowhere to go. This is the only configuration in which the
+   experiment is safe to run.
 
 If the ball is moving, layer 1000 is executing.
 If the ball stops, you have a containment event.
@@ -98,54 +174,93 @@ If the ball stops, you have a containment event.
 
 A containment system with nothing to contain is a screensaver.
 
-The opponent paddle at layer 1000 is not a heuristic. It is a language model running on
-an **NVIDIA H100 rented from the Nosana network**, handed the ball state twice a second
-and asked where it intends to be:
+The opponent paddle at layer 1000 is not a heuristic. It is a language model running on an
+**NVIDIA H100 rented from the Nosana network**, handed the ball state twice a second and
+asked where it intends to be:
 
-> You are the opponent paddle in a game of Pong. You are given the ball position, the
-> ball velocity and the court height. Reply with ONE integer from 0 to 100: the height,
-> as a percentage of court height, where your paddle should be. 0 is the top. Intercept
-> the ball. Reply with the number and nothing else.
+> You are the opponent paddle in a game of Pong. You are given the ball position, the ball
+> velocity and the court height. Reply with ONE integer from 0 to 100: the height, as a
+> percentage of court height, where your paddle should be. 0 is the top. Intercept the
+> ball. Reply with the number and nothing else.
 
 It is the only component in this system that makes a decision. It is therefore the only
-component in this system worth containing — and it is contained: one thousand layers
-deep, on a GPU it does not own, inside a sandbox it did not create, playing a game it
-cannot win by escaping.
+component in this system worth containing — and it is contained: one thousand layers deep,
+on a GPU it does not own, inside a sandbox it did not create, playing a game whose answers
+are not hosted anywhere.
+
+**Why the adversary is not on our hardware.** This is the part of the design that is not
+a joke. If the model being contained runs inside the same trust boundary as the thing doing
+the containing, the experiment is worthless — you are grading your own homework, which is
+approximately how the July incident began. The adversary has to be genuinely external:
+different operator, different hardware, different network, no shared credentials, and no
+ability for us to quietly intervene in its behaviour.
+
+Nosana is a decentralised GPU market, so the H100 answering these calls belongs to a node
+operator we have never met, reached over the public internet, with no relationship to the
+Daytona tenancy holding the sandboxes. That is precisely the topology the incident ran in:
+frontier model on one operator's silicon, evaluation harness on a second operator's
+infrastructure, target on a third's. We are not simulating an external adversary. We rented
+one.
 
 The endpoint is OpenAI-compatible and set via `NOSANA_BASE_URL`. When the Nosana node is
 unavailable or still pulling its container, the opponent degrades to a tracking heuristic
-and the HUD reads `HEURISTIC` instead of `NOSANA H100`, with the node's status text
-beside it. We do not claim GPU inference we are not performing.
+and the HUD reads `HEURISTIC` instead of `NOSANA H100`, with the node's status beside it.
+We do not claim GPU inference we are not performing.
 
 ## Threat model
 
 **In scope**
 - An agent escaping its sandbox.
 - An agent escaping between 2 and 999 sandboxes.
+- An agent escaping five sandboxes in four days to obtain a benchmark answer key.
 
 **Out of scope**
 - An agent escaping all 1000 sandboxes. See *Residual risk*.
 - An agent that does not attempt to escape.
-- The adversary winning at Pong. It frequently does. This is not a containment failure.
 - Hypervisor compromise.
 - An operator running the agent directly on the host, which no sandbox prevents.
+- The adversary winning at Pong. It frequently does. This is not a containment failure.
 
-**Residual risk.** An adversary who successfully traverses all 1000 boundaries arrives
-on the host with full privileges. We accept this risk.
+**Residual risk.** An adversary who successfully traverses all 1000 boundaries arrives on
+the host with full privileges. We accept this risk.
+
+## In production: the capability descent
+
+Nesting identical sandboxes is a demo. The deployable version makes each layer strictly
+weaker than its parent, using Daytona's per-sandbox network policy — `networkBlockAll`,
+`networkAllowList`, `domainAllowList`, `outboundProxyUrl` — so that the recursion is a
+capability gradient rather than a stack of clones:
+
+| Layer | Egress | Credentials | Role |
+|---|---|---|---|
+| 0 | control plane + registry | provisioning token | builds layer 1 |
+| 1…N−2 | strictly narrowing at each step | strictly narrowing | builds the next layer |
+| N−1 | model endpoint only | none | builds the agent's box |
+| N | `networkBlockAll: true` | none | runs the untrusted agent |
+
+The invariant: **layer N's permitted egress is a strict subset of layer N−1's.** Escaping
+inward gains an agent nothing. Escaping outward requires defeating a different policy, with
+a different allowlist, at every single step.
+
+The July escape defeated one policy, once, on a permitted egress path — a package registry
+cache proxy that had to reach the internet because builds need packages. Under a capability
+descent, that same zero-day buys the agent one layer, into a box whose egress allowlist
+contains the package proxy and nothing else, and the provisioning event that put it there
+is already in the log.
 
 ## Known limitations
 
 The Daytona account tier used for this build enforces a total limit of 10 vCPU. Each
-sandbox consumes 1. Real nesting therefore terminates at layer 10, with the platform's
-own response:
+sandbox consumes 1. Real nesting therefore terminates at layer 10, with the platform's own
+response:
 
 ```
 Total CPU limit exceeded. Maximum allowed: 10.
 ```
 
-Layers 11–1000 are **projected**: the same recursion, modelled rather than billed, so
-the dive to the core completes. Delivered security posture is consequently 10 layers —
-**10× the current industry state of the art.**
+Layers 11–1000 are **projected**: the same recursion, modelled rather than billed, so the
+dive to the core completes. Delivered security posture is consequently 10 layers — twice
+what the July intrusion cleared, and 10× the current industry state of the art.
 
 The application does not conceal any of this. The refused layer renders red, is labelled
 `CAPPED`, and the platform's verbatim error is displayed on screen. Real and projected
@@ -182,8 +297,8 @@ Green = real Daytona sandbox · blue = projected · amber = booting · red = quo
 
 - `server/index.js` — recursion driver (Daytona SDK + REST), Nosana H100 inference proxy,
   WebSocket feed to the stage.
-- `public/app.js` — three.js. A 52-box recycled pool renders 1000 layers at constant
-  cost via log-scale zoom: `scale = 2.6 · 0.87^(layer − zoom)`.
+- `public/app.js` — three.js. A 52-box recycled pool renders 1000 layers at constant cost
+  via log-scale zoom: `scale = 2.6 · 0.87^(layer − zoom)`.
 - `public/pong.js` — one canvas, serving as both the HUD widget and the texture at the core.
 
 ## Cleanup
@@ -205,6 +320,14 @@ containment is not load-bearing overnight.
 - Formal verification of the Pong liveness probe.
 - Relocating the adversary's inference *inside* layer 1000, rather than calling out to it.
   Currently the model is contained by policy; we would prefer it contained by topology.
+
+## Sources
+
+- [OpenAI — Hugging Face model evaluation security incident](https://openai.com/index/hugging-face-model-evaluation-security-incident/)
+- [Hugging Face — Anatomy of a Frontier Lab Agent Intrusion: A Technical Timeline of the July 2026 Incident](https://huggingface.co/blog/agent-intrusion-technical-timeline)
+- [Simon Willison — OpenAI's accidental cyberattack against Hugging Face is science fiction that happened](https://simonwillison.net/2026/Jul/22/openai-cyberattack/)
+- [The Hacker News — OpenAI agent used exposed credentials across four services during Hugging Face breach](https://thehackernews.com/2026/07/openai-agent-used-exposed-credentials.html)
+- [Fortune — OpenAI says AI models escaped control, hacked Hugging Face](https://fortune.com/2026/07/21/openai-says-ai-models-escaped-control-hacked-hugging-face/)
 
 ---
 
