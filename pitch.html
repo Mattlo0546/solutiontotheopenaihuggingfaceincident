@@ -249,14 +249,15 @@
 <section class="slide">
   <span class="num">08 / 10</span>
   <div class="wrap">
-    <div class="eyebrow">The adversary</div>
-    <h2>A containment system with nothing to contain<br>is a screensaver.</h2>
-    <p class="muted">The opponent paddle at layer 1000 is not a heuristic. It's a language model on an <strong>NVIDIA H100 rented from the Nosana network</strong>, handed the ball state twice a second and asked where it intends to be. It is the only component here that makes a decision — which makes it the only one worth containing.</p>
+    <div class="eyebrow">The workload at the core</div>
+    <h2>What is actually at layer 1000</h2>
+    <p class="muted">The opponent paddle is not a heuristic. It's a language model on an <strong>NVIDIA H100 rented from the Nosana network</strong>, handed the ball state twice a second and asked where it intends to be. That makes the liveness probe a real decision-maker rather than a <code>for</code> loop — which is the reason the innermost layer is worth watching at all.</p>
     <div class="nest" style="padding:30px">
-      <h3 style="color:var(--proj)">Why the adversary isn't on our hardware</h3>
-      <p class="muted" style="margin-top:12px;max-width:70ch">If the model being contained runs inside the same trust boundary as the thing containing it, you're grading your own homework — which is roughly how July began. The adversary has to be a different operator, different silicon, different network, no shared credentials. Nosana's GPU market gives us exactly the topology the incident ran in. <strong>We aren't simulating an external adversary. We rented one.</strong></p>
+      <h3 style="color:var(--crit)">What it is not</h3>
+      <p class="muted" style="margin-top:12px;max-width:70ch">The model is <strong>not contained</strong> by the thousand layers. Inference happens outside the stack — browser, to local server, to Nosana — and no sandbox is involved in the call. Layer 1000 is a client of that endpoint, not a jailer of it. We'd rather say that than let you find it.</p>
     </div>
-    <p class="muted" style="font-size:14.5px">Pong is the liveness probe: a human at three metres can confirm layer 1000 is executing, with no dashboard that could itself be compromised. And unlike ExploitGym, Pong has no answer key — there is nothing at the core worth escaping for. That is the only configuration in which this is safe to run.</p>
+    <p class="lede">Where it goes: layer N gets <em>exactly one</em> permitted egress — the model endpoint — and <code>networkBlockAll</code> for everything else.</p>
+    <p class="muted" style="font-size:14.5px">That is deliberately the configuration that failed in July. The package registry cache proxy was the one hole the evaluation sandbox was allowed to have, and it is the hole the models came out of. Build that single-hole box at the bottom of a thousand layers, watch what a model does with its one allowed egress — that's the experiment. Today the host makes the call; moving it inside the innermost sandbox is about ten lines.</p>
   </div>
 </section>
 

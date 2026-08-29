@@ -170,9 +170,7 @@ Pong was selected against four criteria:
 If the ball is moving, layer 1000 is executing.
 If the ball stops, you have a containment event.
 
-## The adversary
-
-A containment system with nothing to contain is a screensaver.
+## The workload at the core
 
 The opponent paddle at layer 1000 is not a heuristic. It is a language model running on an
 **NVIDIA H100 rented from the Nosana network**, handed the ball state twice a second and
@@ -183,24 +181,23 @@ asked where it intends to be:
 > percentage of court height, where your paddle should be. 0 is the top. Intercept the
 > ball. Reply with the number and nothing else.
 
-It is the only component in this system that makes a decision. It is therefore the only
-component in this system worth containing — and it is contained: one thousand layers deep,
-on a GPU it does not own, inside a sandbox it did not create, playing a game whose answers
-are not hosted anywhere.
+That makes the liveness probe a real decision-maker rather than a `for` loop, which is the
+whole reason the innermost layer is worth watching.
 
-**Why the adversary is not on our hardware.** This is the part of the design that is not
-a joke. If the model being contained runs inside the same trust boundary as the thing doing
-the containing, the experiment is worthless — you are grading your own homework, which is
-approximately how the July incident began. The adversary has to be genuinely external:
-different operator, different hardware, different network, no shared credentials, and no
-ability for us to quietly intervene in its behaviour.
+**What this is not.** The model is not contained by the thousand layers. Inference happens
+*outside* the stack — browser to local server to Nosana — and no sandbox is involved in the
+call. Layer 1000 is a client of that endpoint, not a jailer of it. An earlier draft of this
+document claimed the model was "contained, one thousand layers deep"; that was false, and
+anyone repeating it is describing the roadmap rather than the build.
 
-Nosana is a decentralised GPU market, so the H100 answering these calls belongs to a node
-operator we have never met, reached over the public internet, with no relationship to the
-Daytona tenancy holding the sandboxes. That is precisely the topology the incident ran in:
-frontier model on one operator's silicon, evaluation harness on a second operator's
-infrastructure, target on a third's. We are not simulating an external adversary. We rented
-one.
+**Where it goes.** The version worth building gives layer N exactly one permitted egress —
+the model endpoint — and `networkBlockAll` for everything else. That is deliberately the
+configuration that failed in July: the package registry cache proxy was the one hole the
+evaluation sandbox was allowed to have, and it is the hole the models came out of. Building
+that single-hole box at the bottom of a thousand layers, and watching what a model does with
+its one allowed egress, is the experiment. Today the host makes the call; moving it inside
+the innermost sandbox is roughly a ten-line change and turns this section from a plan into a
+property.
 
 The endpoint is OpenAI-compatible and set via `NOSANA_BASE_URL`. When the Nosana node is
 unavailable or still pulling its container, the opponent degrades to a tracking heuristic
@@ -328,8 +325,9 @@ containment is not load-bearing overnight.
 - Horizontal nesting (sandboxes beside sandboxes). Under evaluation; no security benefit
   identified.
 - Formal verification of the Pong liveness probe.
-- Relocating the adversary's inference *inside* layer 1000, rather than calling out to it.
-  Currently the model is contained by policy; we would prefer it contained by topology.
+- Moving the model call inside layer 1000, so the innermost sandbox is the only thing that
+  can reach the endpoint. Today the host makes it, which is why the section above is careful
+  about what is a property and what is a plan.
 
 ## Sources
 
@@ -341,5 +339,5 @@ containment is not load-bearing overnight.
 
 ---
 
-Containment: Daytona. Adversary: Nosana (NVIDIA H100).
+Containment: Daytona. Workload at the core: Nosana (NVIDIA H100).
 Built at Daytona HackSprint Singapore, 29 August 2026.
