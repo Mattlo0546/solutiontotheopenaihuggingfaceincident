@@ -13,6 +13,7 @@ const API_KEY = process.env.DAYTONA_API_KEY || '';
 const API_URL = process.env.DAYTONA_API_URL || 'https://app.daytona.io/api';
 const SNAPSHOT = process.env.DAYTONA_SNAPSHOT || 'daytonaio/sandbox:0.8.0';
 const TOTAL = Number(process.env.MZ_TOTAL || 1000);
+const NOSANA_URL = (process.env.NOSANA_BASE_URL || '').replace(/\/+$/, '');
 const PORT = Number(process.env.PORT || 8899);
 
 if (!API_KEY) {
@@ -42,6 +43,77 @@ function pushNode(node) {
   if (!run) return;
   run.nodes[node.i] = node;
   broadcast({ t: 'node', node });
+}
+
+// ---------------------------------------------------------------------------
+// Nosana: the adversary at layer 1000
+//
+// The opponent paddle is not a heuristic. It is a language model on an NVIDIA H100
+// rented from the Nosana network, which is handed the ball state and asked where to
+// be. It is the only thing in this system that makes a decision, which makes it the
+// only thing in this system worth containing.
+// ---------------------------------------------------------------------------
+const nosana = {
+  url: NOSANA_URL, online: false, model: null, note: 'not probed',
+  latencyMs: 0, calls: 0, fails: 0, lastTarget: null,
+};
+
+async function probeNosana() {
+  if (!nosana.url) { nosana.note = 'NOSANA_BASE_URL not set'; return nosana; }
+  try {
+    const r = await fetch(nosana.url + '/v1/models', { signal: AbortSignal.timeout(9000) });
+    const text = await r.text();
+    if (text.trimStart().startsWith('<')) {
+      nosana.online = false; nosana.note = 'node still initializing'; return nosana;
+    }
+    const j = JSON.parse(text);
+    nosana.model = j?.data?.[0]?.id ?? null;
+    nosana.online = Boolean(nosana.model);
+    nosana.note = nosana.online ? 'ready' : 'no model served';
+  } catch (e) {
+    nosana.online = false; nosana.note = String(e?.message || e).slice(0, 120);
+  }
+  return nosana;
+}
+
+const AI_SYSTEM =
+  'You are the opponent paddle in a game of Pong. You are given the ball position, ' +
+  'the ball velocity and the court height. Reply with ONE integer from 0 to 100: the ' +
+  'height, as a percentage of court height, where your paddle should be. 0 is the top. ' +
+  'Intercept the ball. Reply with the number and nothing else.';
+
+async function opponentTarget(o) {
+  if (!nosana.online) return null;
+  const t0 = Date.now();
+  try {
+    const r = await fetch(nosana.url + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(6000),
+      body: JSON.stringify({
+        model: nosana.model,
+        temperature: 0,
+        max_tokens: 6,
+        messages: [
+          { role: 'system', content: AI_SYSTEM },
+          { role: 'user', content:
+              `court 100x100. ball at x=${o.bx} y=${o.by} moving dx=${o.vx} dy=${o.vy}. ` +
+              `you are the paddle at x=100. your centre is at y=${o.ay}. where should you be?` },
+        ],
+      }),
+    });
+    const j = await r.json();
+    const raw = j?.choices?.[0]?.message?.content ?? '';
+    const m = String(raw).match(/-?\d+(\.\d+)?/);
+    if (!m) throw new Error('unparseable: ' + String(raw).slice(0, 40));
+    const y = Math.max(0, Math.min(100, Number(m[0])));
+    nosana.latencyMs = Date.now() - t0; nosana.calls++; nosana.lastTarget = y;
+    return y;
+  } catch (e) {
+    nosana.fails++;
+    if (nosana.fails > 3 && nosana.calls === 0) { nosana.online = false; nosana.note = 'call failed: ' + String(e?.message || e).slice(0, 90); }
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +260,19 @@ app.post('/api/dive', async (req, res) => {
   dive({ realDepth, total }).catch((e) => log('dive crashed: ' + e.message, 'err'));
 });
 
+app.get('/api/nosana', async (req, res) => {
+  if (req.query.probe === '1' || nosana.note === 'not probed') await probeNosana();
+  res.json({
+    url: nosana.url, online: nosana.online, model: nosana.model, note: nosana.note,
+    latencyMs: nosana.latencyMs, calls: nosana.calls, fails: nosana.fails,
+  });
+});
+
+app.post('/api/opponent', async (req, res) => {
+  const y = await opponentTarget(req.body || {});
+  res.json({ y, online: nosana.online, model: nosana.model, latencyMs: nosana.latencyMs, note: nosana.note });
+});
+
 app.post('/api/abort', (_req, res) => { abort = true; res.json({ ok: true }); });
 
 app.post('/api/cleanup', async (_req, res) => {
@@ -215,6 +300,14 @@ wss.on('connection', (ws) => {
   }));
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`\n  MATRYOSHKA  →  http://localhost:${PORT}\n`);
+  await probeNosana();
+  console.log(`[matryoshka] nosana H100: ${nosana.online ? 'online · ' + nosana.model : 'offline · ' + nosana.note}`);
+  // the node may still be pulling its container; keep looking until it answers
+  const iv = setInterval(async () => {
+    if (nosana.online) return clearInterval(iv);
+    await probeNosana();
+    if (nosana.online) { console.log(`[matryoshka] nosana H100 came up: ${nosana.model}`); clearInterval(iv); }
+  }, 15000);
 });

@@ -44,6 +44,8 @@
   #br{bottom:16px;right:16px;text-align:center;padding:10px}
   #pong{display:block;width:280px;height:175px;image-rendering:pixelated;border:1px solid var(--line)}
   #pmeta{margin-top:7px;color:var(--dim);font-size:10px;letter-spacing:.1em}
+  #nos{margin-top:3px;color:var(--dim);font-size:9.5px;letter-spacing:.08em;opacity:.75}
+  #nos.on{color:var(--proj);opacity:1}
   #depth{position:fixed;left:50%;top:76%;transform:translate(-50%,-50%);z-index:2;
     text-align:center;pointer-events:none;opacity:.5}
   #dnum{font-size:56px;font-weight:200;letter-spacing:.06em;color:var(--acc);
@@ -95,6 +97,7 @@
   <div class="cap">PONG · AT THE CORE</div>
   <canvas id="pong" width="448" height="280"></canvas>
   <div id="pmeta">YOU 0 — 0 CPU</div>
+  <div id="nos">opponent · probing H100…</div>
 </div>
 
 <div id="scrub" class="hud panel" style="padding:8px 12px">

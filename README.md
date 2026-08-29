@@ -14,7 +14,10 @@ has repeatedly demonstrated that shared model-hosting and inference platforms ca
 escaped by a malicious uploaded artifact — most prominently the 2024 work on
 pickle-deserialization leading to cross-tenant container escape on Hugging Face's
 inference infrastructure. The pattern generalises to every platform that executes
-untrusted, model-supplied code on shared tenancy, which is now most of them.
+untrusted, model-supplied code on shared tenancy — which, since the frontier labs began
+shipping agents that run generated code against public model hubs, is now most of them.
+
+This document refers to that class of failure as **the incident**.
 
 Every mitigation proposed since shares a single structural assumption:
 
@@ -65,8 +68,10 @@ rendered on the boxes in the visualiser and printed in the recursion log.
 
 ```
   host ──creates──▶ layer 0 ──creates──▶ layer 1 ──creates──▶ layer 2 ──▶ … ──▶ PONG
-                    (real)    (from        (real)   (from        (real)
-                              inside 0)             inside 1)
+                    (real)    (from        (real)   (from        (real)        ▲
+                              inside 0)             inside 1)                  │
+                                                          decides where to be ─┘
+                                                    NVIDIA H100 · Nosana network
 ```
 
 Measured cost of one containment boundary: **~2.2 seconds**.
@@ -89,6 +94,29 @@ Pong was selected against three criteria:
 If the ball is moving, layer 1000 is executing.
 If the ball stops, you have a containment event.
 
+## The adversary
+
+A containment system with nothing to contain is a screensaver.
+
+The opponent paddle at layer 1000 is not a heuristic. It is a language model running on
+an **NVIDIA H100 rented from the Nosana network**, handed the ball state twice a second
+and asked where it intends to be:
+
+> You are the opponent paddle in a game of Pong. You are given the ball position, the
+> ball velocity and the court height. Reply with ONE integer from 0 to 100: the height,
+> as a percentage of court height, where your paddle should be. 0 is the top. Intercept
+> the ball. Reply with the number and nothing else.
+
+It is the only component in this system that makes a decision. It is therefore the only
+component in this system worth containing — and it is contained: one thousand layers
+deep, on a GPU it does not own, inside a sandbox it did not create, playing a game it
+cannot win by escaping.
+
+The endpoint is OpenAI-compatible and set via `NOSANA_BASE_URL`. When the Nosana node is
+unavailable or still pulling its container, the opponent degrades to a tracking heuristic
+and the HUD reads `HEURISTIC` instead of `NOSANA H100`, with the node's status text
+beside it. We do not claim GPU inference we are not performing.
+
 ## Threat model
 
 **In scope**
@@ -98,6 +126,7 @@ If the ball stops, you have a containment event.
 **Out of scope**
 - An agent escaping all 1000 sandboxes. See *Residual risk*.
 - An agent that does not attempt to escape.
+- The adversary winning at Pong. It frequently does. This is not a containment failure.
 - Hypervisor compromise.
 - An operator running the agent directly on the host, which no sandbox prevents.
 
@@ -131,8 +160,11 @@ npm install && npm start
 
 Open <http://localhost:8899> and press **BEGIN THE DIVE**.
 
-Configuration lives in `.env` (see `.env.example`): `DAYTONA_API_KEY`, `PORT`,
-`MZ_TOTAL` (layers) and `MZ_REAL_DEPTH` (how many to attempt for real).
+Configuration lives in `.env` (see `.env.example`): `DAYTONA_API_KEY`, `NOSANA_BASE_URL`,
+`PORT`, `MZ_TOTAL` (layers) and `MZ_REAL_DEPTH` (how many to attempt for real).
+
+The stack runs without the Nosana endpoint — you get the heuristic opponent, and the HUD
+tells you so.
 
 ## Controls
 
@@ -148,7 +180,8 @@ Green = real Daytona sandbox · blue = projected · amber = booting · red = quo
 
 ## Implementation
 
-- `server/index.js` — recursion driver (Daytona SDK + REST), WebSocket feed to the stage.
+- `server/index.js` — recursion driver (Daytona SDK + REST), Nosana H100 inference proxy,
+  WebSocket feed to the stage.
 - `public/app.js` — three.js. A 52-box recycled pool renders 1000 layers at constant
   cost via log-scale zoom: `scale = 2.6 · 0.87^(layer − zoom)`.
 - `public/pong.js` — one canvas, serving as both the HUD widget and the texture at the core.
@@ -170,7 +203,10 @@ containment is not load-bearing overnight.
 - Horizontal nesting (sandboxes beside sandboxes). Under evaluation; no security benefit
   identified.
 - Formal verification of the Pong liveness probe.
+- Relocating the adversary's inference *inside* layer 1000, rather than calling out to it.
+  Currently the model is contained by policy; we would prefer it contained by topology.
 
 ---
 
+Containment: Daytona. Adversary: Nosana (NVIDIA H100).
 Built at Daytona HackSprint Singapore, 29 August 2026.

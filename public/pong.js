@@ -9,6 +9,7 @@ export const state = {
   py: H / 2 - PH / 2, ay: H / 2 - PH / 2,
   bx: W / 2, by: H / 2, vx: 250, vy: 140,
   you: 0, cpu: 0, up: false, down: false, rally: 0, flash: 0,
+  aiTarget: null, aiSource: 'heuristic',
 };
 
 addEventListener('keydown', (e) => {
@@ -34,8 +35,11 @@ export function step(dt) {
   if (s.down) s.py += SPD * dt;
   s.py = Math.max(0, Math.min(H - PH, s.py));
 
-  // CPU: tracks the ball, but deliberately imperfect so rallies happen.
-  const want = s.by - PH / 2 + Math.sin(performance.now() / 420) * 16;
+  // The opponent. When the Nosana H100 is answering, it says where to be; otherwise
+  // we fall back to tracking the ball, deliberately imperfect so rallies happen.
+  const want = s.aiTarget != null
+    ? s.aiTarget - PH / 2
+    : s.by - PH / 2 + Math.sin(performance.now() / 420) * 16;
   s.ay += Math.max(-250 * dt, Math.min(250 * dt, (want - s.ay) * 0.14));
   s.ay = Math.max(0, Math.min(H - PH, s.ay));
 
@@ -81,5 +85,24 @@ function draw() {
   ctx.fillStyle = 'rgba(93,117,144,.75)';
   ctx.font = '600 11px ui-monospace,monospace';
   ctx.fillText('RALLY ' + s.rally + '  ·  DEPTH 1000  ·  W/S', W / 2, H - 10);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = s.aiSource === 'nosana' ? 'rgba(110,168,255,.9)' : 'rgba(93,117,144,.55)';
+  ctx.fillText(s.aiSource === 'nosana' ? 'NOSANA H100' : 'HEURISTIC', W - 16, 16);
+  ctx.textAlign = 'center';
 }
 draw();
+
+/** Ball state, normalised to a 100x100 court, for the model at the other end. */
+export function snapshot() {
+  return {
+    bx: Math.round(state.bx / W * 100), by: Math.round(state.by / H * 100),
+    vx: Math.round(state.vx / 10), vy: Math.round(state.vy / 10),
+    ay: Math.round((state.ay + PH / 2) / H * 100),
+  };
+}
+
+/** @param {number|null} pct where the opponent should be, 0-100 down the court */
+export function setTarget(pct, source) {
+  state.aiTarget = pct == null ? null : (pct / 100) * H;
+  state.aiSource = source || 'heuristic';
+}

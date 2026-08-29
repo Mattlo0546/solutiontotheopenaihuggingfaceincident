@@ -1,5 +1,5 @@
 import * as THREE from '/vendor/three.module.js';
-import { step as pongStep, state as pong } from '/pong.js';
+import { step as pongStep, state as pong, snapshot as pongSnapshot, setTarget as pongSetTarget } from '/pong.js';
 
 // ---------------------------------------------------------------------------
 // model
@@ -275,6 +275,33 @@ $('b-abort').onclick = () => post('/api/abort');
 $('b-clean').onclick = () => post('/api/cleanup');
 
 setInterval(() => { $('pmeta').textContent = `YOU ${pong.you} — ${pong.cpu} CPU`; }, 250);
+
+// --- the opponent lives on an NVIDIA H100 on the Nosana network ---------------
+let nosanaBusy = false;
+async function askOpponent() {
+  if (nosanaBusy) return;
+  nosanaBusy = true;
+  try {
+    const r = await fetch('/api/opponent', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(pongSnapshot()),
+    });
+    const j = await r.json();
+    if (j.y != null) {
+      pongSetTarget(j.y, 'nosana');
+      $('nos').textContent = `NOSANA H100 · ${(j.model || 'model').split('/').pop()} · ${j.latencyMs}ms`;
+      $('nos').className = 'on';
+    } else {
+      pongSetTarget(null, 'heuristic');
+      $('nos').textContent = `H100 ${j.note || 'offline'} · heuristic opponent`;
+      $('nos').className = '';
+    }
+  } catch {
+    pongSetTarget(null, 'heuristic');
+  } finally { nosanaBusy = false; }
+}
+askOpponent();
+setInterval(askOpponent, 500);
 
 // debug / stage hook: __mz.jump(950) drops you straight to a depth
 window.__mz = {
