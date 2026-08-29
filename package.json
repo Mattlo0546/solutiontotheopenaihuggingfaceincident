@@ -1,0 +1,14 @@
+{
+  "name": "matryoshka",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": { "start": "node server/index.js", "dev": "node server/index.js" },
+  "dependencies": {
+    "@daytonaio/sdk": "^0.207.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "three": "^0.171.0",
+    "ws": "^8.21.3"
+  }
+}

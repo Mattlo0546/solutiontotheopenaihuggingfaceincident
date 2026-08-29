@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MATRYOSHKA — 1000 sandboxes deep</title>
+<style>
+  :root{
+    --bg:#04070c; --ink:#dceaf5; --dim:#5d7590; --line:#16222f;
+    --real:#00ffa3; --proj:#6ea8ff; --boot:#ffb020; --cap:#ff3b6b; --acc:#00ffa3;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden}
+  canvas#gl{position:fixed;top:0;left:0;width:100vw;height:100vh;display:block}
+  .hud{position:fixed;z-index:5;pointer-events:none}
+  .panel{background:rgba(6,11,17,.72);border:1px solid var(--line);
+    backdrop-filter:blur(8px);padding:12px 14px;pointer-events:auto}
+  #tl{top:16px;left:16px;width:290px}
+  h1{margin:0 0 2px;font-size:15px;letter-spacing:.28em;color:var(--acc);font-weight:600}
+  .sub{color:var(--dim);font-size:10.5px;letter-spacing:.09em;margin-bottom:10px}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:2.5px 0}
+  .row b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+  .k{color:var(--dim)}
+  .bar{height:3px;background:#0e1721;margin:9px 0 2px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .18s}
+  .note{margin-top:8px;color:var(--boot);font-size:10.5px;line-height:1.45;display:none}
+  #tr{top:16px;right:16px;width:224px}
+  button{width:100%;margin-bottom:6px;padding:9px;background:#0b141d;color:var(--ink);
+    border:1px solid #21313f;font:600 11px/1 ui-monospace,monospace;letter-spacing:.14em;
+    cursor:pointer;transition:.15s}
+  button:hover{background:#12202c;border-color:var(--acc);color:var(--acc)}
+  button.go{background:#04231a;border-color:#0d5c43;color:var(--real)}
+  button.go:hover{background:#073527}
+  button:disabled{opacity:.35;cursor:default}
+  .fld{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;color:var(--dim)}
+  .fld input{width:74px;background:#050a10;border:1px solid #1b2836;color:var(--ink);
+    padding:4px 6px;font:11px ui-monospace,monospace;text-align:right}
+  #bl{bottom:16px;left:16px;width:430px;max-height:210px;overflow:hidden}
+  #logl{margin:0;padding:0;list-style:none;max-height:172px;overflow-y:auto;font-size:10.5px}
+  #logl li{padding:1px 0;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #logl li.ok{color:var(--real)} #logl li.warn{color:var(--boot)} #logl li.err{color:var(--cap)}
+  .cap{color:var(--dim);letter-spacing:.18em;font-size:10px;margin-bottom:7px}
+  #br{bottom:16px;right:16px;text-align:center;padding:10px}
+  #pong{display:block;width:280px;height:175px;image-rendering:pixelated;border:1px solid var(--line)}
+  #pmeta{margin-top:7px;color:var(--dim);font-size:10px;letter-spacing:.1em}
+  #depth{position:fixed;left:50%;top:76%;transform:translate(-50%,-50%);z-index:2;
+    text-align:center;pointer-events:none;opacity:.5}
+  #dnum{font-size:56px;font-weight:200;letter-spacing:.06em;color:var(--acc);
+    font-variant-numeric:tabular-nums;text-shadow:0 0 40px rgba(0,255,163,.45)}
+  #dlab{font-size:10px;letter-spacing:.5em;color:var(--dim);margin-top:-6px}
+  #scrub{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:5;
+    width:min(500px,38vw);pointer-events:auto}
+  #scrub input{width:100%;accent-color:var(--acc)}
+  .lgd{display:flex;gap:12px;justify-content:center;color:var(--dim);font-size:10px;margin-top:5px}
+  .lgd i{display:inline-block;width:7px;height:7px;margin-right:4px;vertical-align:middle}
+  @media (max-width:1100px){#bl{display:none}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="depth" class="hud"><div id="dnum">0</div><div id="dlab">LAYERS DEEP</div></div>
+
+<div id="tl" class="hud panel">
+  <h1>MATRYOSHKA</h1>
+  <div class="sub">A SANDBOX INSIDE A SANDBOX INSIDE A SANDBOX ×1000</div>
+  <div class="row"><span class="k">real daytona sandboxes</span><b id="s-real">0</b></div>
+  <div class="row"><span class="k">projected layers</span><b id="s-proj">0</b></div>
+  <div class="row"><span class="k">deepest layer</span><b id="s-deep">0</b></div>
+  <div class="row"><span class="k">status</span><b id="s-st">idle</b></div>
+  <div class="bar"><i id="s-bar"></i></div>
+  <div class="row"><span class="k">allocated</span><b id="s-alloc">0 / 1000</b></div>
+  <div class="note" id="s-note"></div>
+</div>
+
+<div id="tr" class="hud panel">
+  <div class="cap">CONTROLS</div>
+  <div class="fld"><span>real depth</span><input id="i-real" type="number" value="12" min="1" max="64"></div>
+  <div class="fld"><span>total layers</span><input id="i-total" type="number" value="1000" min="2" max="5000"></div>
+  <button class="go" id="b-dive">▶ BEGIN THE DIVE</button>
+  <button id="b-warp">⤓ WARP TO CORE</button>
+  <button id="b-top">⤒ BACK TO SURFACE</button>
+  <button id="b-abort">■ ABORT</button>
+  <button id="b-clean">✕ DESTROY SANDBOXES</button>
+  <div class="cap" style="margin:10px 0 0">SCROLL = DIVE · W/S = PADDLE</div>
+</div>
+
+<div id="bl" class="hud panel">
+  <div class="cap">RECURSION LOG</div>
+  <ul id="logl"></ul>
+</div>
+
+<div id="br" class="hud panel">
+  <div class="cap">PONG · AT THE CORE</div>
+  <canvas id="pong" width="448" height="280"></canvas>
+  <div id="pmeta">YOU 0 — 0 CPU</div>
+</div>
+
+<div id="scrub" class="hud panel" style="padding:8px 12px">
+  <input id="r-zoom" type="range" min="0" max="999" step="0.1" value="0">
+  <div class="lgd">
+    <span><i style="background:var(--real)"></i>real sandbox</span>
+    <span><i style="background:var(--proj)"></i>projected</span>
+    <span><i style="background:var(--boot)"></i>booting</span>
+    <span><i style="background:var(--cap)"></i>capped</span>
+  </div>
+</div>
+
+<script type="module" src="/app.js"></script>
+</body>
+</html>
