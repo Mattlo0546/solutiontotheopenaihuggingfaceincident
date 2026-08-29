@@ -7,7 +7,10 @@ import { step as pongStep, state as pong, snapshot as pongSnapshot, setTarget as
 let TOTAL = 1000;
 const nodes = new Map();           // layer index -> node from the server
 let allocated = 0, realCount = 0, projCount = 0, deepest = 0;
-let zoom = 0, target = 0, manualUntil = 0, spin = 0;
+let zoom = 0, target = 0, spin = 0;
+// The camera follows allocation only while a dive is actually running. A page load
+// showing a finished run sits at the surface until you ask it to move.
+let autoFollow = false;
 
 const R = 0.87, BASE = 2.6, OFF_MIN = -5, OFF_MAX = 46, POOL = OFF_MAX - OFF_MIN + 1;
 const OVER = 6;   // how far past the last layer you may fly, so Pong fills the frame
@@ -111,9 +114,10 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   spin += dt * 0.09;
 
-  if (now > manualUntil) {
+  if (autoFollow) {
     const autoTarget = allocated >= TOTAL ? TOTAL + OVER : Math.max(0, allocated - 1);
     target += (autoTarget - target) * (1 - Math.exp(-3.0 * dt));
+    rz.value = String(Math.round(Math.min(TOTAL, target)));
   }
   zoom += (target - zoom) * (1 - Math.exp(-2.6 * dt));
   if (Math.abs(target - zoom) > 0.5) zoom += Math.sign(target - zoom) * Math.min(28 * dt, Math.abs(target - zoom));
@@ -190,9 +194,10 @@ const $ = (id) => document.getElementById(id);
 const dnum = $('dnum'), rz = $('r-zoom'), logl = $('logl');
 
 function setManual(v) {
+  // Any deliberate input takes the camera off autopilot until the next dive.
+  autoFollow = false;
   target = Math.max(0, Math.min(TOTAL + OVER, v));
-  manualUntil = performance.now() + 6000;
-  rz.value = String(Math.round(target));
+  rz.value = String(Math.round(Math.min(TOTAL, target)));
 }
 addEventListener('wheel', (e) => {
   const near = Math.max(1, Math.round(Math.abs(e.deltaY) * 0.09));
@@ -235,13 +240,15 @@ function connect() {
       for (const n of m.nodes || []) nodes.set(n.i, n);
       if (m.run) {
         $('s-st').textContent = m.run.status;
+        // Reconnecting mid-dive should resume following; a finished run should not.
+        autoFollow = m.run.status === 'diving';
         if (m.run.note) { const el = $('s-note'); el.textContent = m.run.note; el.style.display = 'block'; }
       }
       recount();
     } else if (m.t === 'run') {
       TOTAL = m.run.total; rz.max = String(TOTAL);
       nodes.clear(); recount(); logl.innerHTML = '';
-      zoom = 0; target = 0; manualUntil = 0;
+      zoom = 0; target = 0; autoFollow = true;
       $('s-st').textContent = 'diving'; $('s-note').style.display = 'none';
       $('b-dive').disabled = true;
     } else if (m.t === 'node') {
@@ -309,6 +316,6 @@ setInterval(askOpponent, 500);
 
 // debug / stage hook: __mz.jump(950) drops you straight to a depth
 window.__mz = {
-  jump(v) { zoom = target = Math.max(0, Math.min(TOTAL + OVER, v)); manualUntil = performance.now() + 8000; },
+  jump(v) { autoFollow = false; zoom = target = Math.max(0, Math.min(TOTAL + OVER, v)); },
   get zoom() { return zoom; },
 };

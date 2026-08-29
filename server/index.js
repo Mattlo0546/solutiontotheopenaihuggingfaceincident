@@ -158,6 +158,37 @@ function spawnCommand(runId, depth) {
 }
 
 // ---------------------------------------------------------------------------
+// Reclaim: destroy every sandbox this app owns and wait for the quota to come
+// back. A dive that starts while the previous chain is still alive gets refused
+// at layer 0 — the old run is holding all of it.
+// ---------------------------------------------------------------------------
+async function reclaim(onLog = () => {}) {
+  const doomed = [];
+  try {
+    for await (const sb of daytona.list({ labels: { app: 'matryoshka' } })) doomed.push(sb);
+  } catch (e) {
+    onLog('could not list sandboxes: ' + e.message);
+    return 0;
+  }
+  if (!doomed.length) return 0;
+
+  onLog(`reclaiming ${doomed.length} sandbox(es) from a previous run…`);
+  await Promise.all(doomed.map((sb) => daytona.delete(sb).catch(() => {})));
+
+  // Deletion is not instant; the tier's CPU budget frees a moment later.
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    let left = 0;
+    try {
+      for await (const sb of daytona.list({ labels: { app: 'matryoshka' } })) left++;
+    } catch { break; }
+    if (left === 0) break;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return doomed.length;
+}
+
+// ---------------------------------------------------------------------------
 // the dive
 // ---------------------------------------------------------------------------
 async function dive({ realDepth, total }) {
@@ -169,6 +200,10 @@ async function dive({ realDepth, total }) {
   };
   broadcast({ t: 'run', run: { id: runId, total, realDepth, status: 'diving', startedAt: run.startedAt } });
   log(`run ${runId} — target ${total} layers, ${realDepth} of them real Daytona sandboxes`);
+
+  // A new dive supersedes the old one, so take the quota back before asking for it.
+  const reclaimed = await reclaim((line) => log(line, 'warn'));
+  if (reclaimed) log(`${reclaimed} sandbox(es) destroyed — quota released`, 'ok');
 
   let parent = null;
   let reached = 0;
@@ -284,13 +319,7 @@ app.post('/api/opponent', async (req, res) => {
 app.post('/api/abort', (_req, res) => { abort = true; res.json({ ok: true }); });
 
 app.post('/api/cleanup', async (_req, res) => {
-  let killed = 0;
-  try {
-    for await (const sb of daytona.list({ labels: { app: 'matryoshka' } })) {
-      await daytona.delete(sb).catch(() => {});
-      killed++;
-    }
-  } catch (e) { log('cleanup: ' + e.message, 'warn'); }
+  const killed = await reclaim((line) => log(line, 'warn'));
   log(`cleanup destroyed ${killed} sandbox(es)`, 'ok');
   res.json({ ok: true, killed });
 });
