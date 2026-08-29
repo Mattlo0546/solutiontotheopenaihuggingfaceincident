@@ -279,7 +279,17 @@ Configuration lives in `.env` (see `.env.example`): `DAYTONA_API_KEY`, `NOSANA_B
 `PORT`, `MZ_TOTAL` (layers) and `MZ_REAL_DEPTH` (how many to attempt for real).
 
 The stack runs without the Nosana endpoint — you get the heuristic opponent, and the HUD
-tells you so.
+tells you so. To check the adversary end to end — tunnel, served model, and a real paddle
+position with its latency:
+
+```bash
+npm run nosana:check
+```
+
+Nosana fronts each node with an frp tunnel, so a job whose server has not yet bound the
+port the job declared answers *every* path with `503` and `x-frp-service-state: loading`.
+That is a different failure from a model that is still loading, and the checker says which
+one you have.
 
 ## Controls
 

@@ -3,7 +3,11 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": { "start": "node server/index.js", "dev": "node server/index.js" },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "nosana:check": "node scripts/nosana-check.mjs"
+  },
   "dependencies": {
     "@daytonaio/sdk": "^0.207.0",
     "dotenv": "^17.2.3",

@@ -62,9 +62,17 @@ async function probeNosana() {
   if (!nosana.url) { nosana.note = 'NOSANA_BASE_URL not set'; return nosana; }
   try {
     const r = await fetch(nosana.url + '/v1/models', { signal: AbortSignal.timeout(9000) });
+    // Nosana fronts each node with an frp tunnel. Until the job's server binds the port
+    // the job declared, the tunnel answers every path with 503 and this header — which
+    // is a different failure from "the model is loading", and worth saying out loud.
+    const frp = r.headers.get('x-frp-service-state');
     const text = await r.text();
-    if (text.trimStart().startsWith('<')) {
-      nosana.online = false; nosana.note = 'node still initializing'; return nosana;
+    if (r.status === 503 || frp || text.trimStart().startsWith('<')) {
+      nosana.online = false;
+      nosana.note = frp
+        ? `tunnel up, no service bound (503 ${frp})`
+        : `node not serving (HTTP ${r.status})`;
+      return nosana;
     }
     const j = JSON.parse(text);
     nosana.model = j?.data?.[0]?.id ?? null;
