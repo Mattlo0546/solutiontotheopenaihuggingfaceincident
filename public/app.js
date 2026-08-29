@@ -257,7 +257,11 @@ function connect() {
     } else if (m.t === 'log') {
       addLog(m.line, m.level);
       if (/quota|capped|halted|refused/i.test(m.line)) {
-        const el = $('s-note'); el.textContent = m.line; el.style.display = 'block';
+        // The platform's message is the quotable part; the JSON envelope around it is not.
+        const j = m.line.match(/"message"\s*:\s*"([^"]+)"/);
+        const el = $('s-note');
+        el.textContent = j ? j[1].replace(/\\n/g, ' ').split('To increase')[0].trim() : m.line;
+        el.style.display = 'block';
       }
     }
   };
