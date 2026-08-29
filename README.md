@@ -276,7 +276,7 @@ Configuration lives in `.env` (see `.env.example`): `DAYTONA_API_KEY`, `NOSANA_B
 `PORT`, `MZ_TOTAL` (layers) and `MZ_REAL_DEPTH` (how many to attempt for real).
 
 The stack runs without the Nosana endpoint — you get the heuristic opponent, and the HUD
-tells you so. To check the adversary end to end — tunnel, served model, and a real paddle
+tells you so. To check the model endpoint end to end — tunnel, served model, and a real paddle
 position with its latency:
 
 ```bash
